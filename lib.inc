@@ -10,7 +10,7 @@ exit:
 string_length:
     xor rax, rax
 .cnt_loop:
-    cmp rdi, rax
+    cmp byte[rdi + rax], 0
     jz  .end
     inc rax
     jmp .cnt_loop
@@ -21,18 +21,20 @@ string_length:
 print_string:
     push rdi
     call string_length
-    mov rsi, rdi
+    pop rsi
     mov rdx, rax
     mov rdi, 1
     mov rax, 1
     syscall
-    pop rdi
     ret
 
+; Перhttps://gitlab.se.ifmo.ru/programming-languages/cse-programming-languages-fall-2023/mainеводит строку (вывод символ с кодом 0xA)
+print_newline:
+    mov rdi, 0xA
 ; Принимает код символа и выводит его в stdout
 print_char:
     push rdi
-    mov rsi, rdi
+    mov rsi, rsp
     mov rdi, 1
     mov rdx, 1
     mov rax, 1
@@ -40,18 +42,11 @@ print_char:
     pop rdi
     ret
 
-; Переводит строку (выводит символ с кодом 0xA)
-print_newline:
-    mov rdi, 0xA
-    call print_char
-    ret
-
 ; Выводит беззнаковое 8-байтовое число в десятичном формате 
 ; Совет: выделите место в стеке и храните там результаты деления
 ; Не забудьте перевести цифры в их ASCII коды.
 print_uint:
     push rdi
-    push r8
     xor r8, r8
     mov rax, rdi
     mov rcx, 10
@@ -65,11 +60,12 @@ print_uint:
     jnz .div_loop
 .print:
     pop rdi
+    push r8
     call print_char
+    pop r8
     dec r8
     cmp r8, 0
     jnz .print
-    pop r8
     pop rdi
     ret
 
@@ -94,8 +90,7 @@ string_equals:
     xor rcx, rcx
 .main_loop:
     mov al, byte[rdi + rcx]
-    mov ah, byte[rsi + rcx]
-    cmp al, ah
+    cmp al, byte[rsi + rcx]
     jne .neq
     cmp al, 0
     je .eq
@@ -109,16 +104,18 @@ string_equals:
 ; Читает один символ из stdin и возвращает его. Возвращает 0 если достигнут конец потока
 read_char:
     xor rax, rax
-    sub rsp, 8
-    xor rdi, rdi
+    mov rdi, 0
+    sub rsp, 1
+    mov rsi, rsp
     mov rdx, 1
     syscall
     cmp rax, 0
-    jle .error
-    pop rax
-    ret 
-.error:
-    pop rax
+    jle .end
+    movzx rax, byte [rsp]
+    add rsp, 1
+    ret
+.end:
+    add rsp, 1
     mov rax, 0
     ret
 
@@ -144,22 +141,30 @@ read_word:
     je .spaces
     pop rsi
     pop rdi
+
+    mov rdx, 0
 .word:
     cmp al, 0x9
     je .fin
+
     cmp al, 0xA
     je .fin
+
     cmp al, 0x20
     je .fin
+
     test rax, rax
     jz .fin
+
     cmp rdx, rsi
     jg .fin_err
     mov [rdi+rdx], al
     inc rdx
     push rdx
     push rdi
+    push rsi
     call read_char
+    pop rsi
     pop rdi
     pop rdx
     jmp .word
@@ -181,19 +186,23 @@ parse_uint:
     push rbx
     xor rax, rax
     xor rdx, rdx
-.loop:
+.main_loop:
 	mov bl, byte[rdi+rdx]
 	test bl, bl
 	jz .fin
+
 	cmp bl, '0'
 	jl .fin_err
+
 	cmp bl, '9'
 	jg .fin_err
-	sub rbx, '0'
+
+	sub bl, '0'
 	imul rax, 10
+
 	add rax, rbx
 	inc rdx
-	jmp .loop
+	jmp .main_loop
 .fin_err:
 	cmp rax, 0
 	jnz .fin
@@ -213,11 +222,11 @@ parse_int:
     jne parse_uint
     inc rdi
     call parse_uint
-	test rdx, rdx
-	jz .end
+    test rdx, rdx
+    jz .fin
     inc rdx
     neg rax
-.end:
+.fin:
     ret
 
 ; Принимает указатель на строку, указатель на буфер и длину буфера
@@ -227,23 +236,28 @@ string_copy:
     push rdi
     push rsi
     push rdx
+
     call string_length
+
     xor rcx, rcx
+
     pop rdx
     pop rsi
     pop rdi
+
     inc rax
     cmp rax, rdx
-    jg .err
-.loop:
+    jg .fin_err
+
+.main_loop:
     cmp rax, rcx
-	je .end
-	mov dl, byte [rdi + rcx]
-	mov [rsi + rcx], dl
-	inc rcx
-    jmp .loop	
-.end:
+    je .fin
+    mov dl, byte [rdi + rcx]
+    mov [rsi + rcx], dl
+    inc rcx
+    jmp .main_loop	
+.fin:
     ret    
-.err: 
+.fin_err: 
     xor rax, rax
     ret
